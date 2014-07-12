@@ -107,15 +107,20 @@ module Mongoid
     # @example Restore the document from deleted state.
     #   document.restore
     #
+    # For resoring associated documents use :recursive => true
+    # @example Restore the associated documents from deleted state.
+    #   document.restore(:recursive => true)
+    #
     # TODO: @return [ Time ] The time the document had been deleted.
     #
     # @since 1.0.0
-    def restore
+    def restore(opts = {})
       run_callbacks(:restore) do
         paranoid_collection.find(atomic_selector).
           update({ "$unset" => { paranoid_field => true }})
         attributes.delete("deleted_at")
         @destroyed = false
+        restore_relations if opts[:recursive]
         true
       end
     end
@@ -123,6 +128,21 @@ module Mongoid
     # Returns a string representing the documents's key suitable for use in URLs.
     def to_param
       new_record? ? nil : to_key.join('-')
+    end
+
+    def restore_relations
+      puts self.class
+      self.relations.each_pair do |name, metadata|
+        next unless metadata[:dependent] == :destroy
+        relation = self.send(name)
+        if relation.present? && relation.paranoid?
+          puts "#{self.class} --> relation #{name}"
+          Array.wrap(relation).each do |doc|
+            puts "#{self.class} --> doc #{name}"
+            doc.restore(:recursive => true)
+          end
+        end
+      end
     end
 
     private
